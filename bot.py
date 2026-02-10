@@ -52,10 +52,11 @@ async def initialize_bot():
     await run_sync(it(WebAPI).init)
     
     # Initialize wrapper-manager
+    local_instance = None
     if config.localInstance.enable:
-        # Launch local QEMU instance
-        localInstance = QemuInstance()
-        await localInstance.launch_instance(loop)
+        # Launch local QEMU instance and keep reference for potential cleanup
+        local_instance = QemuInstance()
+        await local_instance.launch_instance(loop)
         config.instance.url = "127.0.0.1:32767"
         config.instance.secure = False
         await it(WrapperManager).init(config.instance.url, config.instance.secure)
@@ -84,12 +85,14 @@ async def initialize_bot():
         sys.exit(1)
     
     it(GlobalLogger).logger.info("Bot initialization complete!")
+    return local_instance
 
 
 if __name__ == '__main__':
+    local_instance = None
     try:
         # Initialize all components
-        loop.run_until_complete(initialize_bot())
+        local_instance = loop.run_until_complete(initialize_bot())
         
         # Start the Telegram bot
         bot = AppleMusicBot(loop)
@@ -100,3 +103,10 @@ if __name__ == '__main__':
     except Exception as e:
         it(GlobalLogger).logger.error(f"Bot failed to start: {e}")
         sys.exit(1)
+    finally:
+        # Cleanup local instance if it was started
+        if local_instance and it(Config).localInstance.enable:
+            try:
+                loop.run_until_complete(local_instance.terminate())
+            except:
+                pass
