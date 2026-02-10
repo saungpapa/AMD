@@ -402,17 +402,24 @@ The bot supports files up to 2GB!
                     files.add(file_path)
         return files
     
-    async def _upload_progress(self, status_msg, current, total):
-        """Upload progress callback for large files"""
-        if total and hasattr(self, '_last_percent'):
+    def _upload_progress_sync(self, status_msg, current, total):
+        """Upload progress callback for large files (sync wrapper)"""
+        if status_msg and total:
             percent = int(current * 100 / total)
             # Update every 20% to avoid too many edits
+            if not hasattr(self, '_last_percent'):
+                self._last_percent = 0
             if percent >= self._last_percent + 20:
                 self._last_percent = percent
-                try:
-                    await status_msg.edit(f"📤 Uploading... {percent}%")
-                except:
-                    pass  # Ignore if we can't edit (e.g., too many edits)
+                # Schedule the async update without waiting
+                asyncio.create_task(self._upload_progress_async(status_msg, percent))
+    
+    async def _upload_progress_async(self, status_msg, percent):
+        """Async helper to update upload progress"""
+        try:
+            await status_msg.edit(f"📤 Uploading... {percent}%")
+        except:
+            pass  # Ignore if we can't edit (e.g., too many edits)
     
     async def upload_audio(self, chat_id: int, file_path: Path, status_msg=None):
         """Upload audio file with metadata"""
@@ -432,8 +439,7 @@ The bot supports files up to 2GB!
                 cover_path = str(cover_files[0])
             
             # Initialize progress tracking
-            if status_msg:
-                self._last_percent = 0
+            self._last_percent = 0
             
             # Upload with metadata and progress callback
             await self.bot.send_file(
@@ -451,7 +457,7 @@ The bot supports files up to 2GB!
                 thumb=cover_path if cover_path else None,
                 force_document=False,
                 supports_streaming=True,
-                progress_callback=lambda c, t: asyncio.create_task(self._upload_progress(status_msg, c, t)) if status_msg else None
+                progress_callback=lambda c, t: self._upload_progress_sync(status_msg, c, t) if status_msg else None
             )
             
             logger.info(f"Uploaded audio: {file_path.name}")
