@@ -268,8 +268,8 @@ The bot supports files up to 2GB!
             
             text = event.message.text.strip()
             
-            # Check if it's an Apple Music URL
-            if 'music.apple.com' in text:
+            # Check if it's an Apple Music URL (starts with https://music.apple.com)
+            if text.startswith('https://music.apple.com/'):
                 url = text.split()[0]  # Get first word (URL)
                 codec = self.config.telegram.defaultCodec
                 await self.process_download(event, url, codec)
