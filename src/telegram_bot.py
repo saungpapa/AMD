@@ -341,13 +341,13 @@ The bot supports files up to 2GB!
                     await self.upload_photo(event.chat_id, file_path)
                     uploaded_count += 1
             
-            # Clean up files
-            if self.config.download.saveCover or self.config.download.saveLyrics:
-                for file_path in new_files:
-                    try:
-                        file_path.unlink()
-                    except:
-                        pass
+            # Clean up files after upload
+            for file_path in new_files:
+                try:
+                    file_path.unlink()
+                    logger.debug(f"Cleaned up: {file_path}")
+                except Exception as e:
+                    logger.debug(f"Failed to clean up {file_path}: {e}")
             
             # Success message
             await status_msg.edit(f"✅ Upload complete!\n{uploaded_count} file(s) uploaded.")
