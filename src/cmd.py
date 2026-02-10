@@ -1,0 +1,211 @@
+import argparse
+import asyncio
+import sys
+
+import grpc.aio
+from creart import it
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import NestedCompleter
+from prompt_toolkit.patch_stdout import patch_stdout
+
+from src.api import WebAPI
+from src.config import Config
+from src.flags import Flags
+from src.grpc.manager import WrapperManager, WrapperManagerException
+from src.logger import GlobalLogger
+from src.measurer import Measurer
+from src.qemu import QemuInstance
+from src.rip import on_decrypt_success, on_decrypt_failed, rip_song, rip_album, rip_artist, rip_playlist
+from src.url import AppleMusicURL, URLType
+from src.utils import check_dep, run_sync, safely_create_task, config_outdated
+
+
+class InteractiveShell:
+    loop: asyncio.AbstractEventLoop
+    parser: argparse.ArgumentParser
+    localInstance: QemuInstance = QemuInstance()
+
+    def __init__(self, loop: asyncio.AbstractEventLoop):
+        dep_installed, missing_dep = check_dep()
+        if not dep_installed:
+            it(GlobalLogger).logger.error(f"Dependence {missing_dep} was not installed!")
+            loop.stop()
+            sys.exit()
+
+        self.loop = loop
+        loop.run_until_complete(run_sync(it(WebAPI).init))
+        if it(Config).localInstance.enable:
+            loop.run_until_complete(self.localInstance.launch_instance(loop))
+            it(Config).instance.url = "127.0.0.1:32767"
+            it(Config).instance.secure = False
+            loop.run_until_complete(it(WrapperManager).init(it(Config).instance.url, it(Config).instance.secure))
+            while True:
+                it(WrapperManager).status.cache_invalidate()
+                if loop.run_until_complete(it(WrapperManager).status()).ready:
+                    break
+                loop.run_until_complete(asyncio.sleep(3))
+        else:
+            loop.run_until_complete(it(WrapperManager).init(it(Config).instance.url, it(Config).instance.secure))
+        safely_create_task(it(WrapperManager).decrypt_init(on_success=on_decrypt_success, on_failure=on_decrypt_failed))
+        try:
+            loop.run_until_complete(self.show_status())
+        except grpc.aio._call.AioRpcError:
+            it(GlobalLogger).logger.error("Unable to connect to the wrapper-manager")
+            sys.exit()
+
+        if config_outdated():
+            it(GlobalLogger).logger.warning("The configuration file is out of date. Please refer to config.example.toml to update it")
+
+        self.parser = argparse.ArgumentParser(exit_on_error=False)
+        subparser = self.parser.add_subparsers()
+        download_parser = subparser.add_parser("download", aliases=["dl"])
+        download_parser.add_argument("url", type=str)
+        download_parser.add_argument("-c", "--codec",
+                                     choices=["alac", "ec3", "aac", "aac-binaural", "aac-downmix", "aac-legacy", "ac3"],
+                                     default="alac")
+        download_parser.add_argument("-f", "--force", default=False, action="store_true")
+        download_parser.add_argument("-l", "--language", default=it(Config).region.language, action="store")
+        download_parser.add_argument("--include-participate-songs", default=False, dest="include", action="store_true")
+
+        subparser.add_parser("status")
+        subparser.add_parser("login")
+        subparser.add_parser("logout")
+        subparser.add_parser("exit")
+
+    async def show_status(self):
+        it(WrapperManager).status.cache_invalidate()
+        st_resp = await it(WrapperManager).status()
+        if not st_resp.regions:
+            it(GlobalLogger).logger.error("The currently used wrapper-manager instance has no available account. Please execute login command to log in.")
+        it(GlobalLogger).logger.info(f"Regions available on wrapper-manager instance: {', '.join(st_resp.regions)}")
+
+    async def command_parser(self, cmd: str):
+        if not cmd.strip():
+            return
+        cmds = cmd.split(" ")
+        try:
+            args = self.parser.parse_args(cmds)
+        except (argparse.ArgumentError, argparse.ArgumentTypeError, SystemExit):
+            it(GlobalLogger).logger.warning(f"Unknown command: {cmd}")
+            return
+        match cmds[0]:
+            case "download" | "dl":
+                await self.do_download(args.url, args.codec, args.force, args.language, args.include)
+            case "status":
+                await self.show_status()
+            case "exit":
+                self.loop.stop()
+                sys.exit()
+
+    async def do_download(self, raw_url: str, codec: str, force_download: bool, language: str, include: bool = False):
+        url = AppleMusicURL.parse_url(raw_url)
+        if not url:
+            real_url = await it(WebAPI).get_real_url(raw_url)
+            url = AppleMusicURL.parse_url(real_url)
+            if not url:
+                it(GlobalLogger).logger.error("Illegal URL!")
+                return
+        match url.type:
+            case URLType.Song:
+                safely_create_task(rip_song(url, codec, Flags(force_save=force_download, language=language)))
+            case URLType.Album:
+                safely_create_task(rip_album(url, codec, Flags(force_save=force_download, language=language)))
+            case URLType.Artist:
+                safely_create_task(rip_artist(url, codec, Flags(force_save=force_download, language=language,
+                                                                include_participate_in_works=include)))
+            case URLType.Playlist:
+                safely_create_task(rip_playlist(url, codec, Flags(force_save=force_download, language=language)))
+            case _:
+                it(GlobalLogger).logger.error("Unsupported URLType")
+                return
+
+    def bottom_toolbar(self):
+        return f"Download Speed: {it(Measurer).download_speed()}, Decrypt Speed: {it(Measurer).decrypt_speed()}, Tasks: {it(Measurer).tasks_count()}"
+
+    def completer(self):
+        mycompleter = {
+            "dl": {
+                "--codec": {
+                    "ec3": None,
+                    "aac": None,
+                    "alac": None,
+                    "aac-binaural": None,
+                    "aac-downmix": None,
+                    "aac-legacy": None,
+                    "ac3": None
+                },
+                "--force": None,
+                "--language": {
+                    "en-US": None,
+                    "en-GB": None,
+                    "zh-Hans-CN": None,
+                    "zh-Hant-HK": None,
+                    "zh-Hant-TW": None,
+                    "ja": None,
+                    "ko": None
+                },
+                "--include-participate-songs": None
+            },
+            "status": None,
+            "login": None,
+            "logout": None,
+            "exit": None
+        }
+        return NestedCompleter.from_nested_dict(mycompleter)
+
+    async def handle_command(self):
+        session = PromptSession("> ", bottom_toolbar=self.bottom_toolbar, completer=self.completer(), refresh_interval=1)
+
+        while True:
+            try:
+                command = await session.prompt_async()
+                if command.lower() == 'login':
+                    await self.login_flow()
+                if command.lower() == 'logout':
+                    await self.logout_flow()
+                elif command.strip() == '':
+                    continue
+                else:
+                    await self.command_parser(command)
+            except (EOFError, KeyboardInterrupt):
+                return
+
+    async def on_2fa(self, username: str, password: str):
+        session = PromptSession()
+        two_step_code = await session.prompt_async("2FA code: ")
+        return two_step_code
+
+    async def login_flow(self):
+        await it(WrapperManager).init(it(Config).instance.url, it(Config).instance.secure)
+        session = PromptSession()
+        username = await session.prompt_async("Username: ")
+        password = await session.prompt_async("Password: ", is_password=True)
+        try:
+            await it(WrapperManager).login(username, password, self.on_2fa)
+        except WrapperManagerException as e:
+            it(GlobalLogger).logger.error("Login Failed!")
+            return
+        it(GlobalLogger).logger.info("Login Success!")
+        it(WrapperManager).status.cache_invalidate()
+
+    async def logout_flow(self):
+        await it(WrapperManager).init(it(Config).instance.url, it(Config).instance.secure)
+        session = PromptSession()
+        username = await session.prompt_async("Username: ")
+        try:
+            await it(WrapperManager).logout(username)
+        except WrapperManagerException as e:
+            it(GlobalLogger).logger.error("Logout Failed!")
+            return
+        it(GlobalLogger).logger.info("Logout Success!")
+        it(WrapperManager).status.cache_invalidate()
+
+
+    async def start(self):
+        with patch_stdout():
+            try:
+                await self.handle_command()
+            finally:
+                it(GlobalLogger).logger.info("Exit.")
+                if it(Config).localInstance.enable:
+                    await self.localInstance.terminate()
