@@ -23,6 +23,11 @@ from src.types import Codec
 from src.url import AppleMusicURL, URLType, Song, Album, Playlist, Artist
 from src.utils import check_song_existence
 
+# File extensions for upload classification
+AUDIO_EXTENSIONS = {'.m4a', '.mp4', '.aac'}
+LYRICS_EXTENSIONS = {'.lrc', '.ttml'}
+IMAGE_EXTENSIONS = {'.jpg', '.png'}
+
 
 class DownloadTask:
     """Represents a download task"""
@@ -328,15 +333,15 @@ The bot supports files up to 2GB!
             
             uploaded_count = 0
             for file_path in sorted(new_files):
-                if file_path.suffix in ['.m4a', '.mp4', '.aac']:
+                if file_path.suffix in AUDIO_EXTENSIONS:
                     # Upload audio file
                     await self.upload_audio(event.chat_id, file_path)
                     uploaded_count += 1
-                elif file_path.suffix in ['.lrc', '.ttml']:
+                elif file_path.suffix in LYRICS_EXTENSIONS:
                     # Upload lyrics
                     await self.upload_document(event.chat_id, file_path)
                     uploaded_count += 1
-                elif file_path.suffix in ['.jpg', '.png']:
+                elif file_path.suffix in IMAGE_EXTENSIONS:
                     # Upload cover art
                     await self.upload_photo(event.chat_id, file_path)
                     uploaded_count += 1
