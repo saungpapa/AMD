@@ -328,7 +328,7 @@ The bot supports files up to 2GB!
             max_wait = 300  # 5 minutes max for albums/playlists
             poll_interval = 3
             waited = 0
-            last_file_count = 0
+            last_file_count = -1  # Initialize to -1 to ensure at least two stable intervals
             
             while waited < max_wait:
                 await asyncio.sleep(poll_interval)
@@ -404,12 +404,13 @@ The bot supports files up to 2GB!
     
     async def _upload_progress(self, status_msg, current, total):
         """Upload progress callback for large files"""
-        if total:
-            percent = current * 100 / total
+        if total and hasattr(self, '_last_percent'):
+            percent = int(current * 100 / total)
             # Update every 20% to avoid too many edits
-            if int(percent) % 20 == 0:
+            if percent >= self._last_percent + 20:
+                self._last_percent = percent
                 try:
-                    await status_msg.edit(f"📤 Uploading... {percent:.0f}%")
+                    await status_msg.edit(f"📤 Uploading... {percent}%")
                 except:
                     pass  # Ignore if we can't edit (e.g., too many edits)
     
@@ -430,6 +431,10 @@ The bot supports files up to 2GB!
             if cover_files:
                 cover_path = str(cover_files[0])
             
+            # Initialize progress tracking
+            if status_msg:
+                self._last_percent = 0
+            
             # Upload with metadata and progress callback
             await self.bot.send_file(
                 chat_id,
@@ -446,7 +451,7 @@ The bot supports files up to 2GB!
                 thumb=cover_path if cover_path else None,
                 force_document=False,
                 supports_streaming=True,
-                progress_callback=lambda current, total: self._upload_progress(status_msg, current, total) if status_msg else None
+                progress_callback=lambda c, t: asyncio.create_task(self._upload_progress(status_msg, c, t)) if status_msg else None
             )
             
             logger.info(f"Uploaded audio: {file_path.name}")
