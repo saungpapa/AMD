@@ -71,7 +71,8 @@ class AppleMusicBot:
             self.config.telegram.sessionName,
             self.config.telegram.apiId,
             self.config.telegram.apiHash
-        ).start(bot_token=self.config.telegram.botToken)
+        )
+        await self.bot.start(bot_token=self.config.telegram.botToken)
         
         logger.info("Bot started successfully!")
         
@@ -165,8 +166,12 @@ The bot supports files up to 2GB!
             try:
                 # Check wrapper-manager connection
                 wm = it(WrapperManager)
+                wm.status.cache_invalidate()
+                st = await wm.status()
+                
                 status_text = "✅ **Status: Connected**\n\n"
                 status_text += f"📡 Wrapper-Manager: Connected\n"
+                status_text += f"🌍 Regions: {', '.join(st.regions) if st.regions else 'None'}\n"
                 status_text += f"🎵 Active Downloads: {len(self.active_downloads)}\n"
                 status_text += f"📥 Queue Length: {len(self.download_queue)}\n"
             except Exception as e:
@@ -301,6 +306,9 @@ The bot supports files up to 2GB!
             # Get files before download
             task.files_before = self.get_download_files()
             
+            # Create flags for download
+            flags = Flags()
+            
             # Start download based on type
             task.status = "downloading"
             self.active_downloads.add(task_id)
@@ -308,16 +316,32 @@ The bot supports files up to 2GB!
             await status_msg.edit(f"📥 Downloading {parsed_url.type}...\nCodec: `{codec}`")
             
             if parsed_url.type == URLType.Song:
-                await rip_song(parsed_url, codec)
+                await rip_song(parsed_url, codec, flags)
             elif parsed_url.type == URLType.Album:
-                await rip_album(parsed_url, codec)
+                await rip_album(parsed_url, codec, flags)
             elif parsed_url.type == URLType.Playlist:
-                await rip_playlist(parsed_url, codec)
+                await rip_playlist(parsed_url, codec, flags)
             elif parsed_url.type == URLType.Artist:
-                await rip_artist(parsed_url, codec)
+                await rip_artist(parsed_url, codec, flags)
             
-            # Wait a bit for files to be written
-            await asyncio.sleep(2)
+            # Poll for new files with timeout
+            max_wait = 300  # 5 minutes max for albums/playlists
+            poll_interval = 3
+            waited = 0
+            last_file_count = 0
+            
+            while waited < max_wait:
+                await asyncio.sleep(poll_interval)
+                waited += poll_interval
+                current_files = self.get_download_files()
+                new_files = current_files - task.files_before
+                current_count = len(new_files)
+                
+                if current_count > 0 and current_count == last_file_count:
+                    # No new files for one interval, likely done
+                    await asyncio.sleep(2)  # Final grace period
+                    break
+                last_file_count = current_count
             
             # Get new files
             task.files_after = self.get_download_files()
@@ -335,7 +359,7 @@ The bot supports files up to 2GB!
             for file_path in sorted(new_files):
                 if file_path.suffix in AUDIO_EXTENSIONS:
                     # Upload audio file
-                    await self.upload_audio(event.chat_id, file_path)
+                    await self.upload_audio(event.chat_id, file_path, status_msg)
                     uploaded_count += 1
                 elif file_path.suffix in LYRICS_EXTENSIONS:
                     # Upload lyrics
@@ -378,7 +402,18 @@ The bot supports files up to 2GB!
                     files.add(file_path)
         return files
     
-    async def upload_audio(self, chat_id: int, file_path: Path):
+    async def _upload_progress(self, status_msg, current, total):
+        """Upload progress callback for large files"""
+        if total:
+            percent = current * 100 / total
+            # Update every 20% to avoid too many edits
+            if int(percent) % 20 == 0:
+                try:
+                    await status_msg.edit(f"📤 Uploading... {percent:.0f}%")
+                except:
+                    pass  # Ignore if we can't edit (e.g., too many edits)
+    
+    async def upload_audio(self, chat_id: int, file_path: Path, status_msg=None):
         """Upload audio file with metadata"""
         try:
             # Get audio metadata using mutagen
@@ -395,7 +430,7 @@ The bot supports files up to 2GB!
             if cover_files:
                 cover_path = str(cover_files[0])
             
-            # Upload with metadata
+            # Upload with metadata and progress callback
             await self.bot.send_file(
                 chat_id,
                 str(file_path),
@@ -410,7 +445,8 @@ The bot supports files up to 2GB!
                 ],
                 thumb=cover_path if cover_path else None,
                 force_document=False,
-                supports_streaming=True
+                supports_streaming=True,
+                progress_callback=lambda current, total: self._upload_progress(status_msg, current, total) if status_msg else None
             )
             
             logger.info(f"Uploaded audio: {file_path.name}")
