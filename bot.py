@@ -64,13 +64,16 @@ async def initialize_bot():
         # Wait for wrapper-manager to be ready with timeout
         max_qemu_wait = 120  # 2 minutes
         qemu_waited = 0
+        qemu_ready = False
         while qemu_waited < max_qemu_wait:
             it(WrapperManager).status.cache_invalidate()
             if (await it(WrapperManager).status()).ready:
+                qemu_ready = True
                 break
             await asyncio.sleep(3)
             qemu_waited += 3
-        else:
+        
+        if not qemu_ready:
             it(GlobalLogger).logger.error("QEMU local instance failed to become ready within timeout")
             sys.exit(1)
     else:

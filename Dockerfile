@@ -32,7 +32,8 @@ COPY main.py bot.py config.example.toml ./
 
 # Note: config.toml is not copied (contains secrets).
 # When running the container, mount your config.toml:
-# docker run -v $(pwd)/config.toml:/app/config.toml apple-music-bot
+# For Linux/Mac: docker run -v $(pwd)/config.toml:/app/config.toml apple-music-bot
+# For Windows PowerShell: docker run -v ${PWD}/config.toml:/app/config.toml apple-music-bot
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
