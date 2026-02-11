@@ -2,7 +2,7 @@
 version = "0.0.9"
 
 [instance]
-url = "wm1.wol.moe"
+url = "wm.wol.moe"
 secure = true
 
 [localInstance]
