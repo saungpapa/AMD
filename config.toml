@@ -2,8 +2,8 @@
 version = "0.0.9"
 
 [instance]
-url = "127.0.0.1:8080"
-secure = false
+url = "wm1.wol.moe"
+secure = true
 
 [localInstance]
 # Use qemu to launch wrapper-manager
@@ -120,14 +120,14 @@ embedMetadata = ["title", "artist", "album", "album_artist", "composer", "album_
 
 [telegram]
 # Get API ID and Hash from https://my.telegram.org
-apiId = 0
-apiHash = ""
+apiId = 11230592
+apiHash = "594fcd9717990fb853c3cae82d65afdc"
 # Get bot token from @BotFather on Telegram
-botToken = ""
+botToken = "8280759021:AAFHulrHtU5aM2qgq5fgNQf0Iw8kcsV3Bms"
 # Telethon session name
 sessionName = "apple_music_bot"
 # List of authorized Telegram user IDs (empty = allow all)
 # To get your user ID, message @userinfobot on Telegram
-authorizedUsers = []
+authorizedUsers = [1256695927]
 # Default codec for downloads (alac, ec3, ac3, aac, aac-binaural, aac-downmix, aac-legacy)
 defaultCodec = "alac"

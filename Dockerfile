@@ -1,19 +1,27 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies required by AMD
-# ffmpeg: Audio processing
-# gpac (MP4Box): MP4 container manipulation
-# bento4 (mp4edit, mp4extract, mp4decrypt): MP4 tools
-# unzip: Needed temporarily to extract Bento4
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     wget \
     ffmpeg \
-    gpac \
     unzip \
+    build-essential \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GPAC (MP4Box) from source since gpac package is unavailable in Debian Trixie
+RUN wget -q https://github.com/gpac/gpac/archive/refs/tags/v2.4.0.tar.gz \
+    && tar -xzf v2.4.0.tar.gz \
+    && cd gpac-2.4.0 \
+    && ./configure --static-bin \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf gpac-2.4.0 v2.4.0.tar.gz \
+    && apt-get remove -y build-essential && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bento4 tools
@@ -28,15 +36,13 @@ RUN wget -q https://www.bok.net/Bento4/binaries/Bento4-SDK-1-6-0-639.x86_64-unkn
 COPY pyproject.toml requirements.txt ./
 COPY src/ ./src/
 COPY tools/ ./tools/
-COPY main.py bot.py config.example.toml ./
+COPY main.py bot.py config.toml ./
 
-# Install Python dependencies
+# Note: config.toml is not copied (contains secrets).
+# docker run -v $(pwd)/config.toml:/app/config.toml apple-music-bot
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create downloads directory
 RUN mkdir -p downloads
 
-# Expose no ports (bot connects to Telegram servers)
-
-# Run the bot
 CMD ["python", "bot.py"]

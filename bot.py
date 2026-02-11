@@ -28,7 +28,7 @@ from src.logger import GlobalLogger
 from src.qemu import QemuInstance
 from src.rip import on_decrypt_success, on_decrypt_failed
 from src.telegram_bot import AppleMusicBot
-from src.utils import run_sync, safely_create_task, check_dep
+from src.utils import run_sync, safely_create_task, check_dep, config_outdated
 
 
 async def initialize_bot():
@@ -61,12 +61,21 @@ async def initialize_bot():
         config.instance.secure = False
         await it(WrapperManager).init(config.instance.url, config.instance.secure)
         
-        # Wait for wrapper-manager to be ready
-        while True:
+        # Wait for wrapper-manager to be ready with timeout
+        max_qemu_wait = 120  # 2 minutes
+        qemu_waited = 0
+        qemu_ready = False
+        while qemu_waited < max_qemu_wait:
             it(WrapperManager).status.cache_invalidate()
             if (await it(WrapperManager).status()).ready:
+                qemu_ready = True
                 break
             await asyncio.sleep(3)
+            qemu_waited += 3
+        
+        if not qemu_ready:
+            it(GlobalLogger).logger.error("QEMU local instance failed to become ready within timeout")
+            sys.exit(1)
     else:
         await it(WrapperManager).init(config.instance.url, config.instance.secure)
     
@@ -85,6 +94,11 @@ async def initialize_bot():
         sys.exit(1)
     
     it(GlobalLogger).logger.info("Bot initialization complete!")
+    
+    # Check if configuration is outdated
+    if config_outdated():
+        it(GlobalLogger).logger.warning("The configuration file is out of date. Please refer to config.example.toml to update it")
+    
     return local_instance
 
 
@@ -108,5 +122,5 @@ if __name__ == '__main__':
         if local_instance and it(Config).localInstance.enable:
             try:
                 loop.run_until_complete(local_instance.terminate())
-            except:
+            except Exception:
                 pass

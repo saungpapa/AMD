@@ -3,7 +3,6 @@ Telegram Bot for Apple Music Download using Telethon
 Supports file uploads up to 2GB via MTProto API
 """
 import asyncio
-import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, Set
@@ -13,15 +12,12 @@ from loguru import logger
 from telethon import TelegramClient, events, Button
 from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeFilename
 
-from src.api import WebAPI
 from src.config import Config
 from src.exceptions import CodecNotFoundException
 from src.flags import Flags
 from src.grpc.manager import WrapperManager
 from src.rip import rip_song, rip_album, rip_playlist, rip_artist
-from src.types import Codec
-from src.url import AppleMusicURL, URLType, Song, Album, Playlist, Artist
-from src.utils import check_song_existence
+from src.url import AppleMusicURL, URLType, Song, Album, Playlist
 
 # File extensions for upload classification
 AUDIO_EXTENSIONS = {'.m4a', '.mp4', '.aac'}
@@ -394,7 +390,15 @@ The bot supports files up to 2GB!
                 del self.download_queue[task_id]
     
     def get_download_files(self) -> Set[Path]:
-        """Get all files in downloads directory"""
+        """Get all files in downloads directory
+        
+        Note: This method scans the global downloads/ directory. In multi-user scenarios,
+        this could lead to a race condition where files from one user's download are sent
+        to another user. This is partially mitigated by the files_before/files_after set
+        difference, and the dirPathFormat config creates artist/album subdirectories that
+        help separate downloads. For production use with multiple concurrent users, consider
+        implementing per-task subdirectories or task-specific file tracking.
+        """
         files = set()
         if self.downloads_dir.exists():
             for file_path in self.downloads_dir.rglob('*'):
@@ -421,7 +425,7 @@ The bot supports files up to 2GB!
         """Async helper to update upload progress"""
         try:
             await status_msg.edit(f"📤 Uploading... {percent}%")
-        except:
+        except Exception:
             pass  # Ignore if we can't edit (e.g., too many edits)
     
     async def upload_audio(self, chat_id: int, file_path: Path, status_msg=None):
