@@ -64,7 +64,7 @@ async def decrypt_done(adam_id: str):
     song = await run_sync(encapsulate, task.info, bytes().join(task.decryptedSamples),
                           it(Config).download.atmosConventToM4a)
     if not if_raw_atmos(codec, it(Config).download.atmosConventToM4a):
-        if codec != Codec.EC3 or codec != Codec.EC3:
+        if codec not in (Codec.EC3, Codec.AC3):
             song = await run_sync(fix_encapsulate, song)
         song = await run_sync(write_metadata, song, task.metadata, it(Config).metadata.embedMetadata,
                               it(Config).download.coverFormat, task.info.params)
@@ -206,7 +206,7 @@ async def rip_song_legacy(task: Task):
                           it(Config).download.coverFormat, task.info.params)
 
     if not await run_sync(check_song_integrity, song):
-        task.logger.failed_integrity()
+        task.logger.failed_integrity(False)
 
     filename = await run_sync(save, song, Codec.AAC_LEGACY, task.metadata, task.playlist)
     task.logger.saved()

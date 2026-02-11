@@ -20,7 +20,7 @@ from src.rip import rip_song, rip_album, rip_playlist, rip_artist
 from src.url import AppleMusicURL, URLType, Song, Album, Playlist
 
 # File extensions for upload classification
-AUDIO_EXTENSIONS = {'.m4a', '.mp4', '.aac'}
+AUDIO_EXTENSIONS = {'.m4a', '.mp4', '.aac', '.ec3', '.ac3'}
 LYRICS_EXTENSIONS = {'.lrc', '.ttml'}
 IMAGE_EXTENSIONS = {'.jpg', '.png'}
 
