@@ -36,7 +36,7 @@ RUN wget -q https://www.bok.net/Bento4/binaries/Bento4-SDK-1-6-0-639.x86_64-unkn
 COPY pyproject.toml requirements.txt ./
 COPY src/ ./src/
 COPY tools/ ./tools/
-COPY main.py bot.py config.example.toml ./
+COPY main.py bot.py config.toml ./
 
 # Note: config.toml is not copied (contains secrets).
 # docker run -v $(pwd)/config.toml:/app/config.toml apple-music-bot
