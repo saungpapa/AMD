@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import sys
 
+import grpc
 import grpc.aio
 from creart import it
 from prompt_toolkit import PromptSession
@@ -49,7 +50,7 @@ class InteractiveShell:
         safely_create_task(it(WrapperManager).decrypt_init(on_success=on_decrypt_success, on_failure=on_decrypt_failed))
         try:
             loop.run_until_complete(self.show_status())
-        except grpc.aio._call.AioRpcError:
+        except (grpc.aio.AioRpcError, grpc.RpcError):
             it(GlobalLogger).logger.error("Unable to connect to the wrapper-manager")
             sys.exit()
 

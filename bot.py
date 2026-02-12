@@ -4,10 +4,12 @@ Apple Music Telegram Bot Entry Point
 import asyncio
 import sys
 
+import grpc
 import grpc.aio
 from creart import add_creator, it
 
 loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 # Initialize all creators (same as main.py)
 from src.logger import LoggerCreator
@@ -89,7 +91,7 @@ async def initialize_bot():
         if not st_resp.regions:
             it(GlobalLogger).logger.warning("The wrapper-manager instance has no available accounts. Login may be required.")
         it(GlobalLogger).logger.info(f"Regions available on wrapper-manager: {', '.join(st_resp.regions)}")
-    except grpc.aio._call.AioRpcError:
+    except (grpc.aio.AioRpcError, grpc.RpcError):
         it(GlobalLogger).logger.error("Unable to connect to the wrapper-manager")
         sys.exit(1)
     
